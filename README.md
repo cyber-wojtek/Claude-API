@@ -1,9 +1,9 @@
-# claude_webapi
+# Claude-API
 
 A reverse-engineered **asynchronous Python wrapper** for the [Claude.ai](https://claude.ai) web app.
 
 > **Disclaimer:** This is an unofficial library that interacts with Claude.ai's internal web API.  
-> It is not affiliated with or endorsed by Anthropic. Use responsibly and in accordance with Anthropic's Terms of Service.
+> It is not affiliated with or endorsed by Anthropic. Use responsibly.
 
 ---
 
