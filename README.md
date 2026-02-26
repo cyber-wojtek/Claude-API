@@ -1,4 +1,4 @@
-# claude_webapi
+# Claude-API
 
 A reverse-engineered **asynchronous Python wrapper** for the [Claude.ai](https://claude.ai) web app.
 
