@@ -9,9 +9,8 @@ from claude_webapi import ClaudeClient, set_log_level
 from claude_webapi.constants import Model
 from claude_webapi.exceptions import QuotaExceededError, AuthenticationError
 
-SESSION_KEY     = "sk-ant-YOUR_SESSION_KEY"
-ORGANIZATION_ID = "YOUR-ORG-UUID"
-
+SESSION_KEY     = "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"
+ORGANIZATION_ID = None
 
 # ─── 1. Basic single-turn generation ─────────────────────────────────────────
 
