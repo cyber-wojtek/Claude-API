@@ -32,6 +32,8 @@ A reverse-engineered **asynchronous Python wrapper** for the [Claude.ai](https:/
     - [Initialization](#initialization)
     - [Generate content](#generate-content)
     - [Generate content with files](#generate-content-with-files)
+    - [Upload file as bytes](#upload-file-as-bytes)
+    - [Inline attachments](#inline-attachments)
     - [Multi-turn conversations](#multi-turn-conversations)
     - [Resume a previous conversation](#resume-a-previous-conversation)
     - [Delete a conversation](#delete-a-conversation)
@@ -132,6 +134,48 @@ async def main():
 ```
 
 Supported file types mirror what Claude.ai accepts: PDFs, plain text, images (PNG/JPEG/GIF/WebP), CSV, and most common document formats.
+
+---
+
+### Upload file as bytes
+
+When the file lives in memory rather than on disk, pass raw bytes directly:
+
+```python
+async def main():
+    data = b"col1,col2\n1,2\n3,4"
+    chat = client.start_chat()
+    fid = await client.upload_file(
+        chat.cid,
+        data=data,
+        filename="data.csv",
+        mime_type="text/csv",
+    )
+    r = await chat.send_message("Analyse the uploaded CSV.", files=[fid])
+    print(r.text)
+```
+
+---
+
+### Inline attachments
+
+Pass pre-extracted text directly as an *attachment* — no upload round-trip needed:
+
+```python
+async def main():
+    response = await client.generate_content(
+        "Summarise the document below.",
+        attachments=[{
+            "extracted_content": "The quick brown fox…",
+            "file_name": "notes.txt",
+            "file_size": 1234,
+            "file_type": "txt",
+        }],
+    )
+    print(response.text)
+```
+
+`attachments` is supported on `generate_content`, `generate_content_stream`, and `ChatSession.send_message` / `send_message_stream`.
 
 ---
 

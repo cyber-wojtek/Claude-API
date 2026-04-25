@@ -290,38 +290,40 @@ class ClaudeClient:
     async def upload_file(
         self,
         conversation_id: str,
-        file_path: str | Path,
+        file_path: str | Path | None = None,
+        *,
+        data: bytes | None = None,
+        filename: str = "file",
+        mime_type: str | None = None,
     ) -> str:
         """
-        Upload a local file to an existing conversation.
+        Upload a file to an existing conversation.
 
         Returns
         -------
         str
             The ``file_uuid`` assigned by Claude.ai.
         """
-        path   = Path(file_path)
-        mime   = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
-        data   = path.read_bytes()
-        url    = (
+        if data is None:
+            path = Path(file_path)
+            mime_type = mime_type or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+            data = path.read_bytes()
+            filename = path.name
+        mime_type = mime_type or "application/octet-stream"
+        url = (
             f"{CLAUDE_BASE_URL}/api/organizations/{self._organization_id}"
             f"/conversations/{conversation_id}/wiggle/upload-file"
         )
         session = self._ensure_session()
-        form   = aiohttp.FormData()
-        form.add_field("file", data, filename=path.name, content_type=mime)
-
-        # No content-type header needed — aiohttp.FormData sets its own
-        # multipart/form-data boundary automatically.
+        form = aiohttp.FormData()
+        form.add_field("file", data, filename=filename, content_type=mime_type)
         async with session.post(url, data=form, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             if resp.status != 200:
                 body = await resp.text()
-                raise FileUploadError(
-                    f"Upload failed ({resp.status}): {body[:300]}"
-                )
+                raise FileUploadError(f"Upload failed ({resp.status}): {body[:300]}")
             result = await resp.json(content_type=None)
             fid = result.get("file_uuid") or result.get("id", "")
-            logger.info("Uploaded %s → %s…", path.name, str(fid)[:8])
+            logger.info("Uploaded %s → %s…", filename, str(fid)[:8])
             return fid
 
     async def download_file(
@@ -414,12 +416,10 @@ class ClaudeClient:
         file_uuids: list[str],
         model: str,
         parent_uuid: str,
+        attachments: list[dict] | None = None,
     ) -> dict:
-        tools = list(_DEFAULT_TOOLS)
-        human_uuid = str(uuid.uuid4())
-        assistant_uuid = str(uuid.uuid4())
-        payload: dict = {
-            "attachments":         [],
+        return {
+            "attachments":         attachments or [],
             "files":               file_uuids,
             "locale":              "en-US",
             "model":               model,
@@ -429,18 +429,12 @@ class ClaudeClient:
             "rendering_mode":      "messages",
             "sync_sources":        [],
             "timezone":            "UTC",
-            "tools":               tools,
+            "tools":               list(_DEFAULT_TOOLS),
             "turn_message_uuids": {
-                "human_message_uuid":     human_uuid,
-                "assistant_message_uuid": assistant_uuid,
+                "human_message_uuid":     str(uuid.uuid4()),
+                "assistant_message_uuid": str(uuid.uuid4()),
             },
         }
-        payload["attachments"] = []
-        payload["turn_message_uuids"] = {
-            "human_message_uuid": str(uuid.uuid4()),
-            "assistant_message_uuid": str(uuid.uuid4()),
-        }
-        return payload
 
     # ── internal: parse SSE stream ─────────────────────────────────────────
 
@@ -470,11 +464,12 @@ class ClaudeClient:
         files: list[str | Path] | None,
         model: str | None,
         parent_uuid: str,
+        attachments: list[dict] | None = None,
     ) -> ModelOutput:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid
+            prompt, file_uuids, resolved_model, parent_uuid, attachments
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -551,11 +546,12 @@ class ClaudeClient:
         files: list[str | Path] | None,
         model: str | None,
         parent_uuid: str,
+        attachments: list[dict] | None = None,
     ) -> AsyncIterator[ModelOutput]:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid
+            prompt, file_uuids, resolved_model, parent_uuid, attachments
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -611,6 +607,7 @@ class ClaudeClient:
         self,
         prompt: str,
         files: list[str | Path] | None = None,
+        attachments: list[dict] | None = None,
         model: str | Model | None = None,
     ) -> ModelOutput:
         """
@@ -644,6 +641,7 @@ class ClaudeClient:
             files         = files,
             model         = model,
             parent_uuid   = "00000000-0000-4000-8000-000000000000",
+            attachments   = attachments,
         )
 
     # ── public API: generate_content_stream ───────────────────────────────
