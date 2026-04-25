@@ -37,7 +37,6 @@ A reverse-engineered **asynchronous Python wrapper** for the [Claude.ai](https:/
     - [Delete a conversation](#delete-a-conversation)
     - [Streaming mode](#streaming-mode)
     - [Select a language model](#select-a-language-model)
-    - [Apply a system prompt](#apply-a-system-prompt)
     - [Download files from Claude's sandbox](#download-files-from-claudes-sandbox)
     - [List \& manage conversations](#list--manage-conversations)
     - [Check for multiple reply candidates](#check-for-multiple-reply-candidates)
@@ -273,27 +272,6 @@ async def main():
 | `Model.OPUS_3`      | `claude-3-opus-20240229`              |
 
 You can always pass a custom string to access models not listed above.
-
----
-
-### Apply a system prompt
-
-```python
-async def main():
-    # Single call
-    r = await client.generate_content(
-        "How do I reverse a list in Python?",
-        system_prompt="You are a terse Python expert. Reply with code only, no prose.",
-    )
-    print(r.text)
-
-    # Entire chat session
-    chat = client.start_chat(
-        system_prompt="You are a helpful customer support agent for Acme Corp."
-    )
-    r2 = await chat.send_message("I need a refund.")
-    print(r2.text)
-```
 
 ---
 
