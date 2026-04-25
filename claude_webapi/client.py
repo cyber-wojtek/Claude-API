@@ -30,116 +30,16 @@ logger = logging.getLogger("claude_webapi")
 # ──────────────────────────────────────────────────────────────────────────────
 
 _DEFAULT_TOOLS: list[dict] = [
-    {
-        "name": "Bash",
-        "description": "Executes a given bash command and returns its output.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string", "description": "The command to execute"},
-                "timeout": {"type": "number", "description": "Optional timeout in milliseconds"}
-            },
-            "required": ["command"]
-        }
-    },
-    {
-        "name": "Read",
-        "description": "Reads a file from the local filesystem. You can access any file directly by using this tool.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_path": {"type": "string", "description": "The absolute path to the file to read"},
-                "offset": {"type": "number", "description": "The line number to start reading from"},
-                "limit": {"type": "number", "description": "The number of lines to read"}
-            },
-            "required": ["file_path"]
-        }
-    },
-    {
-        "name": "Edit",
-        "description": "A tool for editing files",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_path": {"type": "string", "description": "The absolute path to the file to modify"},
-                "old_string": {"type": "string", "description": "The text to replace"},
-                "new_string": {"type": "string", "description": "The text to replace it with"}
-            },
-            "required": ["file_path", "old_string", "new_string"]
-        }
-    },
-    {
-        "name": "Replace",
-        "description": "Write a file to the local filesystem.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "file_path": {"type": "string", "description": "The absolute path to the file to write"},
-                "content": {"type": "string", "description": "The content to write to the file"}
-            },
-            "required": ["file_path", "content"]
-        }
-    },
-    {
-        "name": "LS",
-        "description": "List files in a directory.",
-        "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
-    },
-    {
-        "name": "Grep",
-        "description": "Search for a string in files.",
-        "input_schema": {"type": "object", "properties": {"search_string": {"type": "string"}, "file_pattern": {"type": "string"}}, "required": ["search_string"]}
-    },
-    {
-        "name": "Glob",
-        "description": "List files matching a glob pattern.",
-        "input_schema": {"type": "object", "properties": {"pattern": {"type": "string"}}, "required": ["pattern"]}
-    },
-    {
-        "name": "Think",
-        "description": "Brainstorm and organize thoughts.",
-        "input_schema": {"type": "object", "properties": {"thought": {"type": "string"}}, "required": ["thought"]}
-    },
-    {
-        "name": "Agent",
-        "description": "Launch a sub-agent for complex tasks.",
-        "input_schema": {"type": "object", "properties": {"prompt": {"type": "string"}, "description": {"type": "string"}}, "required": ["prompt", "description"]}
-    },
-    {
-        "name": "Architect",
-        "description": "Architectural design tool.",
-        "input_schema": {"type": "object", "properties": {"plan": {"type": "string"}}, "required": ["plan"]}
-    },
-    {
-        "name": "NotebookRead",
-        "description": "Read a Jupyter notebook.",
-        "input_schema": {"type": "object", "properties": {"notebook_path": {"type": "string"}}, "required": ["notebook_path"]}
-    },
-    {
-        "name": "NotebookEdit",
-        "description": "Edit a Jupyter notebook cell.",
-        "input_schema": {"type": "object", "properties": {"notebook_path": {"type": "string"}, "cell_id": {"type": "string"}, "new_source": {"type": "string"}}, "required": ["notebook_path", "cell_id", "new_source"]}
-    },
-    {
-        "name": "StickerRequest",
-        "description": "Request a sticker.",
-        "input_schema": {"type": "object", "properties": {"request": {"type": "string"}}, "required": ["request"]}
-    },
-    {
-        "name": "MCP",
-        "description": "Access MCP tools.",
-        "input_schema": {"type": "object", "properties": {"server_url": {"type": "string"}}, "required": ["server_url"]}
-    },
-    {
-        "name": "MemoryRead",
-        "description": "Read persistent memory.",
-        "input_schema": {"type": "object", "properties": {"memory_path": {"type": "string"}}, "required": ["memory_path"]}
-    },
-    {
-        "name": "MemoryWrite",
-        "description": "Write to persistent memory.",
-        "input_schema": {"type": "object", "properties": {"memory_path": {"type": "string"}, "content": {"type": "string"}}, "required": ["memory_path", "content"]}
-    },
+    {"name": "web_search",            "type": "web_search_v0"},
+    {"name": "artifacts",             "type": "artifacts_v0"},
+    {"name": "repl",                  "type": "repl_v0"},
+    {"name": "ask_user_input_v0",     "type": "widget"},
+    {"name": "weather_fetch",         "type": "widget"},
+    {"name": "recipe_display_v0",     "type": "widget"},
+    {"name": "places_map_display_v0", "type": "widget"},
+    {"name": "message_compose_v1",    "type": "widget"},
+    {"name": "places_search",         "type": "widget"},
+    {"name": "fetch_sports_data",     "type": "widget"},
 ]
 
 _DEFAULT_STYLE: dict = {
@@ -237,14 +137,13 @@ class ClaudeClient:
         self._auto_close  = auto_close
         self._close_delay = close_delay
         self._timeout     = aiohttp.ClientTimeout(total=timeout)
-        
-        if not self._organization_id:
-            await self.discover_organization_id()
-        
+                
         cookies = {
-            "sessionKey":    self._session_key,
-            "lastActiveOrg": self._organization_id,
+            "sessionKey": self._session_key,
         }
+        
+        if self._organization_id:
+            cookies["lastActiveOrg"] = self._organization_id
 
         connector = aiohttp.TCPConnector(ssl=True)
         self._session = aiohttp.ClientSession(
@@ -252,6 +151,11 @@ class ClaudeClient:
             connector=connector,
             headers=_COMMON_HEADERS,
         )
+
+        if not self._organization_id:
+            await self._discover_organization_id()
+            self._session.cookie_jar.update_cookies({ "lastActiveOrg": self._organization_id })
+
         logger.info("ClaudeClient initialised (org=%s…)", self._organization_id[:8])
 
     async def close(self) -> None:
@@ -290,8 +194,6 @@ class ClaudeClient:
         raise APIError("Unable to discover organization UUID.")
 
     def _org_url(self, path: str) -> str:
-        if not self._organization_id:
-            raise RuntimeError("organization_id not set. Call discover_organization_id() first.")
         return f"{CLAUDE_BASE_URL}/api/organizations/{self._organization_id}/{path}"
 
     def _ensure_session(self) -> aiohttp.ClientSession:
@@ -569,16 +471,14 @@ class ClaudeClient:
         conv_id: str,
         prompt: str,
         files: list[str | Path] | None,
-        attachments: list[dict] | None,
         model: str | None,
         parent_uuid: str,
         system_prompt: str | None,
-        new_conv: bool,
     ) -> ModelOutput:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, attachments, resolved_model, parent_uuid, system_prompt, is_first_turn=new_conv
+            prompt, file_uuids, resolved_model, parent_uuid, system_prompt
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -653,16 +553,14 @@ class ClaudeClient:
         conv_id: str,
         prompt: str,
         files: list[str | Path] | None,
-        attachments: list[dict] | None,
         model: str | None,
         parent_uuid: str,
         system_prompt: str | None,
-        new_conv: bool,
     ) -> AsyncIterator[ModelOutput]:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, attachments, resolved_model, parent_uuid, system_prompt, is_first_turn=new_conv
+            prompt, file_uuids, resolved_model, parent_uuid, system_prompt
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -718,7 +616,6 @@ class ClaudeClient:
         self,
         prompt: str,
         files: list[str | Path] | None = None,
-        attachments: list[dict] | None = None,
         model: str | Model | None = None,
         system_prompt: str | None = None,
     ) -> ModelOutput:
@@ -753,11 +650,9 @@ class ClaudeClient:
             conv_id       = conv_id,
             prompt        = prompt,
             files         = files,
-            attachments   = attachments,
             model         = model,
             parent_uuid   = "00000000-0000-4000-8000-000000000000",
             system_prompt = system_prompt,
-            new_conv      = False,  # already created above
         )
 
     # ── public API: generate_content_stream ───────────────────────────────
@@ -791,7 +686,6 @@ class ClaudeClient:
             model         = model,
             parent_uuid   = "00000000-0000-4000-8000-000000000000",
             system_prompt = system_prompt,
-            new_conv      = False,
         ):
             yield chunk
             
