@@ -414,7 +414,6 @@ class ClaudeClient:
         file_uuids: list[str],
         model: str,
         parent_uuid: str,
-        system_prompt: str | None,
     ) -> dict:
         tools = list(_DEFAULT_TOOLS)
         human_uuid = str(uuid.uuid4())
@@ -441,8 +440,6 @@ class ClaudeClient:
             "human_message_uuid": str(uuid.uuid4()),
             "assistant_message_uuid": str(uuid.uuid4()),
         }
-        if system_prompt:
-            payload["system_prompt"] = system_prompt
         return payload
 
     # ── internal: parse SSE stream ─────────────────────────────────────────
@@ -473,12 +470,11 @@ class ClaudeClient:
         files: list[str | Path] | None,
         model: str | None,
         parent_uuid: str,
-        system_prompt: str | None,
     ) -> ModelOutput:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid, system_prompt
+            prompt, file_uuids, resolved_model, parent_uuid
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -555,12 +551,11 @@ class ClaudeClient:
         files: list[str | Path] | None,
         model: str | None,
         parent_uuid: str,
-        system_prompt: str | None,
     ) -> AsyncIterator[ModelOutput]:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid, system_prompt
+            prompt, file_uuids, resolved_model, parent_uuid
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -617,7 +612,6 @@ class ClaudeClient:
         prompt: str,
         files: list[str | Path] | None = None,
         model: str | Model | None = None,
-        system_prompt: str | None = None,
     ) -> ModelOutput:
         """
         Send a single-turn message to Claude and return the full response.
@@ -632,8 +626,6 @@ class ClaudeClient:
             Model to use.  Accepts a :class:`~claude_webapi.constants.Model`
             enum member or a raw model-string.  Defaults to
             ``claude-sonnet-4-6``.
-        system_prompt:
-            Optional system prompt prepended to this single generation.
 
         Returns
         -------
@@ -652,7 +644,6 @@ class ClaudeClient:
             files         = files,
             model         = model,
             parent_uuid   = "00000000-0000-4000-8000-000000000000",
-            system_prompt = system_prompt,
         )
 
     # ── public API: generate_content_stream ───────────────────────────────
@@ -663,7 +654,6 @@ class ClaudeClient:
         files: list[str | Path] | None = None,
         attachments: list[dict] | None = None,
         model: str | Model | None = None,
-        system_prompt: str | None = None,
     ) -> AsyncIterator[ModelOutput]:
         """
         Stream a single-turn response, yielding incremental chunks.
@@ -685,7 +675,6 @@ class ClaudeClient:
             attachments   = attachments,
             model         = model,
             parent_uuid   = "00000000-0000-4000-8000-000000000000",
-            system_prompt = system_prompt,
         ):
             yield chunk
             
@@ -711,7 +700,6 @@ class ClaudeClient:
     def start_chat(
         self,
         model: str | Model | None = None,
-        system_prompt: str | None = None,
         metadata: dict | None = None,
     ) -> ChatSession:
         """
@@ -721,8 +709,6 @@ class ClaudeClient:
         ----------
         model:
             Model to use for the session.
-        system_prompt:
-            A persistent system prompt for the entire conversation.
         metadata:
             Pass a previously saved ``chat.metadata`` dict to resume a
             conversation from a prior session.
@@ -741,7 +727,6 @@ class ClaudeClient:
         return ChatSession(
             client        = self,
             model         = resolved,
-            system_prompt = system_prompt,
             metadata      = metadata,
         )
 
