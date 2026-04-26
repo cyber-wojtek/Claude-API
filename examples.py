@@ -16,9 +16,8 @@ ORGANIZATION_ID = None
 
 async def example_basic():
     async with ClaudeClient(SESSION_KEY, ORGANIZATION_ID) as client:
-        response = await client.generate_content("What is the capital of France?")
+        response = await client.generate_content("What is the capital of France?", model=Model.SONNET)
         print(response.text)
-        # Or simply: print(response)
 
 
 # ─── 2. Generation with a file attachment ────────────────────────────────────
@@ -180,5 +179,5 @@ async def example_logging():
 
 if __name__ == "__main__":
     # Run whichever example you like:
-    asyncio.run(example_basic())
+    asyncio.run(example_chat())
 

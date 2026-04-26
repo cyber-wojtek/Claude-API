@@ -31,12 +31,10 @@ class ChatSession:
         client: "ClaudeClient",
         conversation_id: str | None = None,
         model: str | None = None,
-        system_prompt: str | None = None,
         metadata: dict | None = None,
     ):
         self._client          = client
         self._model           = model
-        self._system_prompt   = system_prompt
         self._parent_uuid     = "00000000-0000-4000-8000-000000000000"
         self._current_candidate_index: int = 0
 
@@ -44,9 +42,11 @@ class ChatSession:
         if metadata:
             self._conv_id       = metadata["conversation_id"]
             self._parent_uuid   = metadata.get("parent_message_uuid", self._parent_uuid)
+            self._is_new        = False
             self._last_response : ModelOutput | None = None
         else:
             self._conv_id       = str(uuid.uuid4())
+            self._is_new        = True
             self._last_response : ModelOutput | None = None
 
     # ── public metadata ────────────────────────────────────────────────────
@@ -91,14 +91,15 @@ class ChatSession:
         -------
         ModelOutput
         """
+        is_new = self._is_new
+        self._is_new = False
         output = await self._client._send(
-            conv_id       = self._conv_id,
-            prompt        = prompt,
-            files         = files,
-            model         = model or self._model,
-            parent_uuid   = self._parent_uuid,
-            system_prompt = self._system_prompt,
-            new_conv      = self._last_response is None,
+            conv_id             = self._conv_id,
+            prompt              = prompt,
+            files               = files,
+            model               = model or self._model,
+            parent_uuid         = self._parent_uuid,
+            is_new_conversation = is_new,
         )
         self._last_response = output
         if output.metadata.get("parent_message_uuid"):
@@ -121,14 +122,15 @@ class ChatSession:
             async for chunk in chat.send_message_stream("Write me an essay"):
                 print(chunk.text_delta, end="", flush=True)
         """
+        is_new = self._is_new
+        self._is_new = False
         async for chunk in self._client._send_stream(
-            conv_id       = self._conv_id,
-            prompt        = prompt,
-            files         = files,
-            model         = model or self._model,
-            parent_uuid   = self._parent_uuid,
-            system_prompt = self._system_prompt,
-            new_conv      = self._last_response is None,
+            conv_id             = self._conv_id,
+            prompt              = prompt,
+            files               = files,
+            model               = model or self._model,
+            parent_uuid         = self._parent_uuid,
+            is_new_conversation = is_new,
         ):
             # Update parent UUID from the last chunk's metadata
             if chunk.metadata.get("parent_message_uuid"):

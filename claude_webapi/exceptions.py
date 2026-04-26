@@ -34,3 +34,13 @@ class FileUploadError(ClaudeWebAPIError):
 class QuotaExceededError(ClaudeWebAPIError):
     """Raised when the Claude.ai message limit has been reached."""
 
+    def __init__(
+        self,
+        message: str,
+        retry_after_s: int | None = None,
+        reset_at_ms: int | None = None,
+    ):
+        super().__init__(message)
+        self.retry_after_s = retry_after_s
+        self.reset_at_ms   = reset_at_ms
+

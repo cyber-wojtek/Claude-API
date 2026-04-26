@@ -100,16 +100,20 @@ class ClaudeClient:
         session_key: str,
         organization_id: str | None = None,
         proxy: str | None = None,
+        device_id: str | None = None,
+        activity_session_id: str | None = None,
     ):
         if not session_key:
             raise AuthenticationError("session_key must not be empty.")
 
-        self._session_key     = session_key
-        self._organization_id = organization_id
-        self._proxy           = proxy
+        self._session_key          = session_key
+        self._organization_id      = organization_id
+        self._proxy                = proxy
+        self._device_id            = device_id or str(uuid.uuid4())
+        self._activity_session_id  = activity_session_id or str(uuid.uuid4())
         self._session: aiohttp.ClientSession | None = None
-        self._auto_close      = False
-        self._close_delay     = 300
+        self._auto_close           = False
+        self._close_delay          = 300
         self._close_task: asyncio.Task | None = None
 
 
@@ -139,17 +143,25 @@ class ClaudeClient:
         self._timeout     = aiohttp.ClientTimeout(total=timeout)
                 
         cookies = {
-            "sessionKey": self._session_key,
+            "sessionKey":          self._session_key,
+            "anthropic-device-id": self._device_id,
+            "activitySessionId":   self._activity_session_id,
         }
-        
+
         if self._organization_id:
             cookies["lastActiveOrg"] = self._organization_id
+
+        headers = {
+            **_COMMON_HEADERS,
+            "anthropic-device-id":    self._device_id,
+            "x-activity-session-id":  self._activity_session_id,
+        }
 
         connector = aiohttp.TCPConnector(ssl=True)
         self._session = aiohttp.ClientSession(
             cookies=cookies,
             connector=connector,
-            headers=_COMMON_HEADERS,
+            headers=headers,
         )
 
         if not self._organization_id:
@@ -219,7 +231,7 @@ class ClaudeClient:
         async with session.post(
             url,
             data=body,
-            headers={"Content-Length": str(len(body)), "content-type": "application/json"},
+            headers={"anthropic-device-id": self._device_id, "x-activity-session-id": self._activity_session_id, "Content-Length": str(len(body)), "content-type": "application/json"},
             timeout=self._timeout,
             **kwargs,
         ) as resp:
@@ -233,11 +245,51 @@ class ClaudeClient:
         async with session.put(
             url,
             data=body,
-            headers={"Content-Length": str(len(body)), "content-type": "application/json"},
+            headers={"anthropic-device-id": self._device_id, "x-activity-session-id": self._activity_session_id, "Content-Length": str(len(body)), "content-type": "application/json"},
             timeout=self._timeout,
         ) as resp:
             await self._raise_for_status(resp)
             return await resp.json(content_type=None)
+
+    @staticmethod
+    def _parse_message_limit_event(evt: dict) -> dict | None:
+        """Parse a message_limit SSE event into a quota snapshot dict."""
+        body = evt.get("message_limit")
+        if not body or not isinstance(body, dict):
+            return None
+
+        limit_type = body.get("type")  # 'within_limit' | 'hit_limit'
+        windows = body.get("windows") or {}
+
+        worst_utilization = 0.0
+        soonest_reset_at_ms: int | None = None
+        any_window_over = False
+
+        for window_data in windows.values():
+            util = window_data.get("utilization", 0)
+            if isinstance(util, (int, float)) and util > worst_utilization:
+                worst_utilization = util
+            resets_at = window_data.get("resets_at")
+            if resets_at:
+                ts = int(resets_at) * 1000
+                if soonest_reset_at_ms is None or ts < soonest_reset_at_ms:
+                    soonest_reset_at_ms = ts
+            if window_data.get("status") == "over_limit":
+                any_window_over = True
+
+        import time
+        now_ms = int(time.time() * 1000)
+        is_hard_limit = limit_type == "hit_limit" or any_window_over
+        remaining_fraction = max(0.0, min(1.0, 1.0 - worst_utilization))
+        reset_ms = max(0, soonest_reset_at_ms - now_ms) if soonest_reset_at_ms is not None else None
+
+        return {
+            "remaining_fraction": remaining_fraction,
+            "reset_at_ms": soonest_reset_at_ms,
+            "reset_ms": reset_ms,
+            "is_hard_limit": is_hard_limit,
+            "windows": windows,
+        }
 
     @staticmethod
     async def _raise_for_status(resp: aiohttp.ClientResponse) -> None:
@@ -246,6 +298,13 @@ class ClaudeClient:
         if resp.status == 404:
             raise ConversationNotFoundError(
                 f"Resource not found: {resp.url}"
+            )
+        if resp.status == 429:
+            retry_after = resp.headers.get("Retry-After")
+            retry_s = int(retry_after) if retry_after and retry_after.isdigit() else None
+            raise QuotaExceededError(
+                "Claude.ai rate limit (429). Try again later.",
+                retry_after_s=retry_s,
             )
         if resp.status >= 400:
             body = await resp.text()
@@ -371,7 +430,7 @@ class ClaudeClient:
         async with session.post(
             self._org_url("chat_conversations"),
             data=body,
-            headers={"Content-Length": str(len(body)), "content-type": "application/json"},
+            headers={"anthropic-device-id": self._device_id, "x-activity-session-id": self._activity_session_id, "Content-Length": str(len(body)), "content-type": "application/json"},
             timeout=aiohttp.ClientTimeout(total=30),
         ) as resp:
             if resp.status in (200, 201):
@@ -417,13 +476,13 @@ class ClaudeClient:
         model: str,
         parent_uuid: str,
         attachments: list[dict] | None = None,
+        is_new_conversation: bool = False,
     ) -> dict:
-        return {
+        payload: dict = {
             "attachments":         attachments or [],
             "files":               file_uuids,
             "locale":              "en-US",
             "model":               model,
-            "parent_message_uuid": parent_uuid,
             "personalized_styles": [_DEFAULT_STYLE],
             "prompt":              prompt,
             "rendering_mode":      "messages",
@@ -435,6 +494,16 @@ class ClaudeClient:
                 "assistant_message_uuid": str(uuid.uuid4()),
             },
         }
+        if is_new_conversation:
+            payload["create_conversation_params"] = {
+                "name":                            "",
+                "model":                           model,
+                "include_conversation_preferences": True,
+                "is_temporary":                    False,
+            }
+        else:
+            payload["parent_message_uuid"] = parent_uuid
+        return payload
 
     # ── internal: parse SSE stream ─────────────────────────────────────────
 
@@ -465,11 +534,12 @@ class ClaudeClient:
         model: str | None,
         parent_uuid: str,
         attachments: list[dict] | None = None,
+        is_new_conversation: bool = False,
     ) -> ModelOutput:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid, attachments
+            prompt, file_uuids, resolved_model, parent_uuid, attachments, is_new_conversation
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -485,37 +555,58 @@ class ClaudeClient:
             url,
             data=body,
             headers={
-                "Accept":         "text/event-stream",
-                "Content-Length": str(len(body)),
-                "content-type":   "application/json",
+                "anthropic-device-id":   self._device_id,
+                "x-activity-session-id": self._activity_session_id,
+                "Accept":                "text/event-stream",
+                "Content-Length":        str(len(body)),
+                "content-type":          "application/json",
             },
             timeout=aiohttp.ClientTimeout(total=3600),
         ) as resp:
             await self._raise_for_status(resp)
-            async for raw_chunk, _ in resp.content.iter_chunks():
-                evt = self._parse_sse_chunk(raw_chunk)
-                if not evt:
-                    continue
-                etype = evt.get("type", "")
+            buf = ""
+            async for raw_chunk in resp.content:
+                buf += raw_chunk.decode("utf-8", errors="replace")
+                while "\n\n" in buf:
+                    event_str, buf = buf.split("\n\n", 1)
+                    evt = None
+                    for line in event_str.splitlines():
+                        if line.startswith("data:"):
+                            try:
+                                evt = json.loads(line[5:].strip())
+                            except json.JSONDecodeError:
+                                pass
+                    if not evt:
+                        continue
+                    etype = evt.get("type", "")
 
-                if etype == "content_block_delta":
-                    delta = evt.get("delta", {})
-                    if delta.get("type") == "text_delta":
-                        full_text += delta.get("text", "")
-                    elif delta.get("type") == "thinking_delta":
-                        thoughts += delta.get("thinking", "")
+                    if etype == "content_block_delta":
+                        delta = evt.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            full_text += delta.get("text", "")
+                        elif delta.get("type") == "thinking_delta":
+                            thoughts += delta.get("thinking", "")
 
-                elif etype == "message_stop":
-                    meta = evt.get("message", {})
-                    mid  = meta.get("uuid") or meta.get("id", "")
-                    if mid:
-                        new_parent = mid
+                    elif etype == "message_stop":
+                        meta = evt.get("message", {})
+                        mid  = meta.get("uuid") or meta.get("id", "")
+                        if mid:
+                            new_parent = mid
 
-                elif etype == "message_limit":
-                    raise QuotaExceededError(
-                        "Claude.ai message limit reached. "
-                        "Try again later or switch accounts."
-                    )
+                    elif etype == "message_limit":
+                        quota = self._parse_message_limit_event(evt)
+                        if quota:
+                            pct = round(quota["remaining_fraction"] * 100)
+                            reset_s = round(quota["reset_ms"] / 1000) if quota["reset_ms"] is not None else None
+                            if quota["is_hard_limit"]:
+                                eta = f" (resets in {reset_s}s)" if reset_s is not None else ""
+                                raise QuotaExceededError(
+                                    f"Claude.ai message limit reached; {pct}% remaining{eta}.",
+                                    reset_at_ms=quota["reset_at_ms"],
+                                    retry_after_s=reset_s,
+                                )
+                            else:
+                                logger.debug("Quota update: %d%% remaining.", pct)
 
         images = _extract_images(full_text)
         candidate = Candidate(index=0, text=full_text, images=images)
@@ -547,11 +638,12 @@ class ClaudeClient:
         model: str | None,
         parent_uuid: str,
         attachments: list[dict] | None = None,
+        is_new_conversation: bool = False,
     ) -> AsyncIterator[ModelOutput]:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid, attachments
+            prompt, file_uuids, resolved_model, parent_uuid, attachments, is_new_conversation
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -566,40 +658,62 @@ class ClaudeClient:
             url,
             data=body,
             headers={
-                "Accept":         "text/event-stream",
-                "Content-Length": str(len(body)),
-                "content-type":   "application/json",
+                "anthropic-device-id":   self._device_id,
+                "x-activity-session-id": self._activity_session_id,
+                "Accept":                "text/event-stream",
+                "Content-Length":        str(len(body)),
+                "content-type":          "application/json",
             },
             timeout=aiohttp.ClientTimeout(total=300),
         ) as resp:
             await self._raise_for_status(resp)
-            async for raw_chunk, _ in resp.content.iter_chunks():
-                evt = self._parse_sse_chunk(raw_chunk)
-                if not evt:
-                    continue
-                etype = evt.get("type", "")
+            buf = ""
+            async for raw_chunk in resp.content:
+                buf += raw_chunk.decode("utf-8", errors="replace")
+                while "\n\n" in buf:
+                    event_str, buf = buf.split("\n\n", 1)
+                    evt = None
+                    for line in event_str.splitlines():
+                        if line.startswith("data:"):
+                            try:
+                                evt = json.loads(line[5:].strip())
+                            except json.JSONDecodeError:
+                                pass
+                    if not evt:
+                        continue
+                    etype = evt.get("type", "")
 
-                if etype == "content_block_delta":
-                    delta = evt.get("delta", {})
-                    if delta.get("type") == "text_delta":
-                        delta_text  = delta.get("text", "")
-                        accumulated += delta_text
-                        yield ModelOutput(
-                            text       = accumulated,
-                            text_delta = delta_text,
-                            metadata   = {"parent_message_uuid": new_parent},
-                        )
+                    if etype == "content_block_delta":
+                        delta = evt.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            delta_text  = delta.get("text", "")
+                            accumulated += delta_text
+                            yield ModelOutput(
+                                text       = accumulated,
+                                text_delta = delta_text,
+                                metadata   = {"parent_message_uuid": new_parent},
+                            )
 
-                elif etype == "message_stop":
-                    meta = evt.get("message", {})
-                    mid  = meta.get("uuid") or meta.get("id", "")
-                    if mid:
-                        new_parent = mid
+                    elif etype == "message_stop":
+                        meta = evt.get("message", {})
+                        mid  = meta.get("uuid") or meta.get("id", "")
+                        if mid:
+                            new_parent = mid
 
-                elif etype == "message_limit":
-                    raise QuotaExceededError(
-                        "Claude.ai message limit reached."
-                    )
+                    elif etype == "message_limit":
+                        quota = self._parse_message_limit_event(evt)
+                        if quota:
+                            pct = round(quota["remaining_fraction"] * 100)
+                            reset_s = round(quota["reset_ms"] / 1000) if quota["reset_ms"] is not None else None
+                            if quota["is_hard_limit"]:
+                                eta = f" (resets in {reset_s}s)" if reset_s is not None else ""
+                                raise QuotaExceededError(
+                                    f"Claude.ai message limit reached; {pct}% remaining{eta}.",
+                                    reset_at_ms=quota["reset_at_ms"],
+                                    retry_after_s=reset_s,
+                                )
+                            else:
+                                logger.debug("Quota update: %d%% remaining.", pct)
 
     # ── public API: generate_content ──────────────────────────────────────
 
@@ -634,14 +748,14 @@ class ClaudeClient:
             print(response.text)
         """
         conv_id = str(uuid.uuid4())
-        await self._ensure_conversation(conv_id)
         return await self._send(
-            conv_id       = conv_id,
-            prompt        = prompt,
-            files         = files,
-            model         = model,
-            parent_uuid   = "00000000-0000-4000-8000-000000000000",
-            attachments   = attachments,
+            conv_id             = conv_id,
+            prompt              = prompt,
+            files               = files,
+            model               = model,
+            parent_uuid         = "00000000-0000-4000-8000-000000000000",
+            attachments         = attachments,
+            is_new_conversation = True,
         )
 
     # ── public API: generate_content_stream ───────────────────────────────
@@ -665,14 +779,14 @@ class ClaudeClient:
                 print(chunk.text_delta, end="", flush=True)
         """
         conv_id = str(uuid.uuid4())
-        await self._ensure_conversation(conv_id)
         async for chunk in self._send_stream(
-            conv_id       = conv_id,
-            prompt        = prompt,
-            files         = files,
-            attachments   = attachments,
-            model         = model,
-            parent_uuid   = "00000000-0000-4000-8000-000000000000",
+            conv_id             = conv_id,
+            prompt              = prompt,
+            files               = files,
+            attachments         = attachments,
+            model               = model,
+            parent_uuid         = "00000000-0000-4000-8000-000000000000",
+            is_new_conversation = True,
         ):
             yield chunk
             
@@ -760,7 +874,7 @@ class ClaudeClient:
         async with session.patch(
             f"{CLAUDE_BASE_URL}/api/account/settings",
             data=body,
-            headers={"Content-Length": str(len(body)), "content-type": "application/json"},
+            headers={"anthropic-device-id": self._device_id, "x-activity-session-id": self._activity_session_id, "Content-Length": str(len(body)), "content-type": "application/json"},
             timeout=self._timeout,
         ) as resp:
             await self._raise_for_status(resp)
