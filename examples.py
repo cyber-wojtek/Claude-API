@@ -179,5 +179,5 @@ async def example_logging():
 
 if __name__ == "__main__":
     # Run whichever example you like:
-    asyncio.run(example_chat())
+    asyncio.run(example_basic())
 

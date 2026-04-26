@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import mimetypes
 import uuid
 from pathlib import Path
@@ -50,6 +51,7 @@ _DEFAULT_STYLE: dict = {
 }
 
 _COMMON_HEADERS: dict[str, str] = {
+    "Accept-Encoding":             "identity",
     "Accept-Language":             "en-US,en;q=0.9",
     "anthropic-client-platform":  "web_claude_ai",
     "anthropic-client-version":   "1.0.0",
@@ -500,6 +502,7 @@ class ClaudeClient:
                 "model":                           model,
                 "include_conversation_preferences": True,
                 "is_temporary":                    False,
+                "enabled_imagine":                 True,
             }
         else:
             payload["parent_message_uuid"] = parent_uuid
@@ -544,7 +547,6 @@ class ClaudeClient:
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
         session = self._ensure_session()
-        body    = json.dumps(payload).encode()
 
         full_text    = ""
         thoughts     = ""
@@ -553,13 +555,11 @@ class ClaudeClient:
 
         async with session.post(
             url,
-            data=body,
+            json=payload,
             headers={
                 "anthropic-device-id":   self._device_id,
                 "x-activity-session-id": self._activity_session_id,
                 "Accept":                "text/event-stream",
-                "Content-Length":        str(len(body)),
-                "content-type":          "application/json",
             },
             timeout=aiohttp.ClientTimeout(total=3600),
         ) as resp:
@@ -567,16 +567,24 @@ class ClaudeClient:
             buf = ""
             async for raw_chunk in resp.content:
                 buf += raw_chunk.decode("utf-8", errors="replace")
-                while "\n\n" in buf:
-                    event_str, buf = buf.split("\n\n", 1)
-                    evt = None
-                    for line in event_str.splitlines():
-                        if line.startswith("data:"):
-                            try:
-                                evt = json.loads(line[5:].strip())
-                            except json.JSONDecodeError:
-                                pass
-                    if not evt:
+                chunks = re.split(r"\r?\n\r?\n", buf)
+                buf = chunks.pop()
+                for event_str in chunks:
+                    if not event_str.strip():
+                        continue
+                    event_type = None
+                    data = None
+                    for line in re.split(r"\r?\n", event_str):
+                        t = line.strip()
+                        if t.startswith("event:"):
+                            event_type = t[6:].strip()
+                        elif t.startswith("data:"):
+                            data = t[5:].strip()
+                    if not (event_type and data):
+                        continue
+                    try:
+                        evt = json.loads(data)
+                    except json.JSONDecodeError:
                         continue
                     etype = evt.get("type", "")
 
@@ -587,11 +595,13 @@ class ClaudeClient:
                         elif delta.get("type") == "thinking_delta":
                             thoughts += delta.get("thinking", "")
 
-                    elif etype == "message_stop":
-                        meta = evt.get("message", {})
-                        mid  = meta.get("uuid") or meta.get("id", "")
+                    elif etype == "message_start":
+                        mid = evt.get("message", {}).get("uuid", "")
                         if mid:
                             new_parent = mid
+
+                    elif etype == "message_stop":
+                        meta = evt.get("message", {})
 
                     elif etype == "message_limit":
                         quota = self._parse_message_limit_event(evt)
@@ -648,7 +658,6 @@ class ClaudeClient:
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
         session = self._ensure_session()
-        body    = json.dumps(payload).encode()
 
         accumulated = ""
         new_parent  = parent_uuid
@@ -656,13 +665,11 @@ class ClaudeClient:
 
         async with session.post(
             url,
-            data=body,
+            json=payload,
             headers={
                 "anthropic-device-id":   self._device_id,
                 "x-activity-session-id": self._activity_session_id,
                 "Accept":                "text/event-stream",
-                "Content-Length":        str(len(body)),
-                "content-type":          "application/json",
             },
             timeout=aiohttp.ClientTimeout(total=300),
         ) as resp:
@@ -670,16 +677,24 @@ class ClaudeClient:
             buf = ""
             async for raw_chunk in resp.content:
                 buf += raw_chunk.decode("utf-8", errors="replace")
-                while "\n\n" in buf:
-                    event_str, buf = buf.split("\n\n", 1)
-                    evt = None
-                    for line in event_str.splitlines():
-                        if line.startswith("data:"):
-                            try:
-                                evt = json.loads(line[5:].strip())
-                            except json.JSONDecodeError:
-                                pass
-                    if not evt:
+                chunks = re.split(r"\r?\n\r?\n", buf)
+                buf = chunks.pop()
+                for event_str in chunks:
+                    if not event_str.strip():
+                        continue
+                    event_type = None
+                    data = None
+                    for line in re.split(r"\r?\n", event_str):
+                        t = line.strip()
+                        if t.startswith("event:"):
+                            event_type = t[6:].strip()
+                        elif t.startswith("data:"):
+                            data = t[5:].strip()
+                    if not (event_type and data):
+                        continue
+                    try:
+                        evt = json.loads(data)
+                    except json.JSONDecodeError:
                         continue
                     etype = evt.get("type", "")
 
@@ -694,11 +709,13 @@ class ClaudeClient:
                                 metadata   = {"parent_message_uuid": new_parent},
                             )
 
-                    elif etype == "message_stop":
-                        meta = evt.get("message", {})
-                        mid  = meta.get("uuid") or meta.get("id", "")
+                    elif etype == "message_start":
+                        mid = evt.get("message", {}).get("uuid", "")
                         if mid:
                             new_parent = mid
+
+                    elif etype == "message_stop":
+                        meta = evt.get("message", {})
 
                     elif etype == "message_limit":
                         quota = self._parse_message_limit_event(evt)
