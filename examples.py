@@ -11,11 +11,25 @@ from claude_webapi.exceptions import QuotaExceededError, AuthenticationError
 
 SESSION_KEY     = "sk-ant-..."
 ORGANIZATION_ID = None
+GOOGLE_AUTH_CODE = "..."
+ARKOSE_SESSION_TOKEN = None
 
 # ─── 1. Basic single-turn generation ─────────────────────────────────────────
 
 async def example_basic():
     async with ClaudeClient(SESSION_KEY, ORGANIZATION_ID) as client:
+        response = await client.generate_content("What is the capital of France?", model=Model.SONNET)
+        print(response.text)
+
+
+# ─── 1b. Browser-based Google auth ───────────────────────────────────────────
+
+async def example_browser_auth():
+    client = await ClaudeClient.from_google_code(
+        GOOGLE_AUTH_CODE,
+        arkose_session_token=ARKOSE_SESSION_TOKEN,
+    )
+    async with client:
         response = await client.generate_content("What is the capital of France?", model=Model.SONNET)
         print(response.text)
 

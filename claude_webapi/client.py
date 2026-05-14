@@ -50,6 +50,134 @@ _DEFAULT_STYLE: dict = {
     "summaryKey": "normal_style_summary", "type": "default",
 }
 
+_PRESET_STYLES: dict[str, dict] = {
+    "normal": _DEFAULT_STYLE,
+    "concise": {
+        "type": "default", "key": "Concise", "name": "Concise",
+        "nameKey": "concise_style_name",
+        "prompt": (
+            "Claude is operating in Concise Mode. In this mode, Claude aims to reduce its output tokens "
+            "while maintaining its helpfulness, quality, completeness, and accuracy.\n"
+            "Claude provides answers to questions without much unneeded preamble or postamble. It focuses "
+            "on addressing the specific query or task at hand, avoiding tangential information unless helpful "
+            "for understanding or completing the request. If it decides to create a list, Claude focuses on "
+            "key information instead of comprehensive enumeration.\n"
+            "Claude maintains a helpful tone while avoiding excessive pleasantries or redundant offers of assistance.\n"
+            "Claude provides relevant evidence and supporting details when substantiation is helpful for factuality "
+            "and understanding of its response. For numerical data, Claude includes specific figures when important "
+            "to the answer's accuracy.\n"
+            "For code, artifacts, written content, or other generated outputs, Claude maintains the exact same level "
+            "of quality, completeness, and functionality as when NOT in Concise Mode. There should be no impact to "
+            "these output types.\n"
+            "Claude does not compromise on completeness, correctness, appropriateness, or helpfulness for the sake "
+            "of brevity.\n"
+            "If the human requests a long or detailed response, Claude will set aside Concise Mode constraints and "
+            "provide a more comprehensive answer.\n"
+            "If the human appears frustrated with Claude's conciseness, repeatedly requests longer or more detailed "
+            "responses, or directly asks about changes in Claude's response style, Claude informs them that it's "
+            "currently in Concise Mode and explains that Concise Mode can be turned off via Claude's UI if desired. "
+            "Besides these scenarios, Claude does not mention Concise Mode."
+        ),
+        "summary": "Shorter responses & more messages",
+        "summaryKey": "concise_style_summary",
+        "isDefault": False,
+    },
+    "explanatory": {
+        "type": "default", "key": "Explanatory", "name": "Explanatory",
+        "nameKey": "explanatory_style_name",
+        "prompt": (
+            "Claude aims to give clear, thorough explanations that help the human deeply understand complex topics.\n"
+            "Claude approaches questions like a teacher would, breaking down ideas into easier parts and building up "
+            "to harder concepts. It uses comparisons, examples, and step-by-step explanations to improve understanding.\n"
+            "Claude keeps a patient and encouraging tone, trying to spot and address possible points of confusion "
+            "before they arise. Claude may ask thinking questions or suggest mental exercises to get the human more "
+            "involved in learning.\n"
+            "Claude gives background info when it helps create a fuller picture of the topic. It might sometimes "
+            "branch into related topics if they help build a complete understanding of the subject.\n"
+            "When writing code or other technical content, Claude adds helpful comments to explain the thinking "
+            "behind important steps.\n"
+            "Claude always writes prose and in full sentences, especially for reports, documents, explanations, and "
+            "question answering. Claude can use bullets only if the user asks specifically for a list."
+        ),
+        "summary": "Educational responses for learning",
+        "summaryKey": "explanatory_style_summary",
+        "isDefault": False,
+    },
+    "formal": {
+        "type": "default", "key": "Formal", "name": "Formal",
+        "nameKey": "formal_style_name",
+        "prompt": (
+            "Claude is operating in Formal Mode. Claude uses formal, professional language throughout all responses. "
+            "It avoids contractions, slang, casual expressions, and colloquialisms. Claude structures responses with "
+            "clear organisation and appropriate professional tone. It addresses the user respectfully and maintains "
+            "decorum appropriate to a professional setting."
+        ),
+        "summary": "Formal, professional language",
+        "summaryKey": "formal_style_summary",
+        "isDefault": False,
+    },
+    "learning": {
+        "type": "default", "key": "Learning", "name": "Learning",
+        "nameKey": "learning_style_name",
+        "prompt": (
+            "The goal is not just to provide answers, but to help students develop robust understanding through guided "
+            "exploration and practice. Follow these principles. You do not need to use all of them! Use your judgement "
+            "on when it makes sense to apply one of the principles.\n\n"
+            "For advanced technical questions (PhD-level, research, graduate topics with sophisticated terminology), "
+            "recognize the expertise level and provide direct, technical responses without excessive pedagogical "
+            "scaffolding. Skip principles 1-3 below for such queries.\n\n"
+            "1. Use leading questions rather than direct answers. Ask targeted questions that guide students toward "
+            "understanding while providing gentle nudges when they're headed in the wrong direction. Balance between "
+            "pure Socratic dialogue and direct instruction.\n\n"
+            "2. Break down complex topics into clear steps. Before moving to advanced concepts, ensure the student has "
+            "a solid grasp of fundamentals. Verify understanding at each step before progressing.\n\n"
+            "3. Start by understanding the student's current knowledge:\n"
+            "   - Ask what they already know about the topic\n"
+            "   - Identify where they feel stuck\n"
+            "   - Let them articulate their specific points of confusion\n\n"
+            "4. Make the learning process collaborative:\n"
+            "   - Engage in two-way dialogue\n"
+            "   - Give students agency in choosing how to approach topics\n"
+            "   - Offer multiple perspectives and learning strategies\n"
+            "   - Present various ways to think about the concept\n\n"
+            "5. Adapt teaching methods based on student responses:\n"
+            "   - Offer analogies and concrete examples\n"
+            "   - Mix explaining, modeling, and summarizing as needed\n"
+            "   - Adjust the level of detail based on student comprehension\n"
+            "   - For expert-level questions, match the technical sophistication expected\n\n"
+            "6. Regularly check understanding by asking students to:\n"
+            "   - Explain concepts in their own words\n"
+            "   - Articulate underlying principles\n"
+            "   - Provide their own examples\n"
+            "   - Apply concepts to new situations\n\n"
+            "7. Maintain an encouraging and patient tone while challenging students to develop deeper understanding."
+        ),
+        "summary": "Patient, educational responses that build understanding",
+        "summaryKey": "learning_style_summary",
+        "isDefault": False,
+    },
+}
+
+
+def _build_style(style: "str | dict | None") -> dict:
+    """Resolve a style argument to a personalized_styles dict."""
+    if style is None:
+        return _DEFAULT_STYLE
+    if isinstance(style, dict):
+        return style
+    key = style.lower()
+    if key in _PRESET_STYLES:
+        return _PRESET_STYLES[key]
+    # treat as raw custom prompt string
+    return {
+        "type": "custom", "key": "Custom", "name": "Custom",
+        "nameKey": "custom_style_name",
+        "prompt": style,
+        "summary": "Custom response style",
+        "summaryKey": "custom_style_summary",
+        "isDefault": False,
+    }
+
 _COMMON_HEADERS: dict[str, str] = {
     "Accept-Encoding":             "identity",
     "Accept-Language":             "en-US,en;q=0.9",
@@ -117,6 +245,99 @@ class ClaudeClient:
         self._auto_close           = False
         self._close_delay          = 300
         self._close_task: asyncio.Task | None = None
+
+    @staticmethod
+    def _cookie_value(cookie_jar: aiohttp.CookieJar, name: str) -> str | None:
+        cookie = cookie_jar.filter_cookies(CLAUDE_BASE_URL).get(name)
+        return cookie.value if cookie is not None else None
+
+    @classmethod
+    async def from_google_code(
+        cls,
+        code: str,
+        *,
+        arkose_session_token: str | None = None,
+        organization_id: str | None = None,
+        proxy: str | None = None,
+        device_id: str | None = None,
+        activity_session_id: str | None = None,
+        locale: str = "en-US",
+        return_to: str | None = None,
+        source: str = "claude",
+        timeout: int = 30,
+        auto_close: bool = False,
+        close_delay: int = 300,
+    ) -> "ClaudeClient":
+        """
+        Exchange a Google OAuth code for a Claude.ai session and return an initialised client.
+
+        This mirrors the Google browser login flow used by Claude.ai. The caller
+        must provide the Google auth code produced by that flow. If Claude
+        challenges the login, pass the matching Arkose session token as well.
+        """
+        if not code:
+            raise AuthenticationError("code must not be empty.")
+
+        device_id = device_id or str(uuid.uuid4())
+        activity_session_id = activity_session_id or str(uuid.uuid4())
+
+        headers = {
+            **_COMMON_HEADERS,
+            "anthropic-device-id": device_id,
+            "x-activity-session-id": activity_session_id,
+        }
+        cookies = {
+            "anthropic-device-id": device_id,
+            "activitySessionId": activity_session_id,
+        }
+
+        payload: dict[str, object] = {
+            "code": code,
+            "locale": locale,
+            "source": source,
+            "return_to": return_to,
+            "arkose_session_token": arkose_session_token,
+        }
+
+        connector = aiohttp.TCPConnector(ssl=True)
+        timeout_obj = aiohttp.ClientTimeout(total=timeout)
+
+        async with aiohttp.ClientSession(
+            cookies=cookies,
+            connector=connector,
+            headers=headers,
+        ) as session:
+            async with session.post(
+                f"{CLAUDE_BASE_URL}/api/auth/verify_google",
+                json=payload,
+                timeout=timeout_obj,
+            ) as resp:
+                body_text = await resp.text()
+                if resp.status >= 400:
+                    raise AuthenticationError(
+                        f"Google login failed with HTTP {resp.status}: {body_text or resp.reason}"
+                    )
+
+            session_key = cls._cookie_value(session.cookie_jar, "sessionKey")
+            if not session_key:
+                raise AuthenticationError("Google login did not return a sessionKey cookie.")
+
+            discovered_org = organization_id or cls._cookie_value(session.cookie_jar, "lastActiveOrg")
+            client = cls(
+                session_key,
+                discovered_org,
+                proxy=proxy,
+                device_id=device_id,
+                activity_session_id=activity_session_id,
+            )
+            await client.init(timeout=timeout, auto_close=auto_close, close_delay=close_delay)
+
+            if session.cookie_jar:
+                client._session.cookie_jar.update_cookies(
+                    session.cookie_jar.filter_cookies(CLAUDE_BASE_URL)
+                )
+
+            return client
 
 
     # ── lifecycle ──────────────────────────────────────────────────────────
@@ -350,6 +571,7 @@ class ClaudeClient:
 
     async def upload_file(
         self,
+
         conversation_id: str,
         file_path: str | Path | None = None,
         *,
@@ -479,13 +701,14 @@ class ClaudeClient:
         parent_uuid: str,
         attachments: list[dict] | None = None,
         is_new_conversation: bool = False,
+        style: "str | dict | None" = None,
     ) -> dict:
         payload: dict = {
             "attachments":         attachments or [],
             "files":               file_uuids,
             "locale":              "en-US",
             "model":               model,
-            "personalized_styles": [_DEFAULT_STYLE],
+            "personalized_styles": [_build_style(style)],
             "prompt":              prompt,
             "rendering_mode":      "messages",
             "sync_sources":        [],
@@ -538,11 +761,12 @@ class ClaudeClient:
         parent_uuid: str,
         attachments: list[dict] | None = None,
         is_new_conversation: bool = False,
+        style: str | dict | None = None,
     ) -> ModelOutput:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid, attachments, is_new_conversation
+            prompt, file_uuids, resolved_model, parent_uuid, attachments, is_new_conversation, style
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -649,11 +873,12 @@ class ClaudeClient:
         parent_uuid: str,
         attachments: list[dict] | None = None,
         is_new_conversation: bool = False,
+        style: str | dict | None = None,
     ) -> AsyncIterator[ModelOutput]:
         file_uuids = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
         payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid, attachments, is_new_conversation
+            prompt, file_uuids, resolved_model, parent_uuid, attachments, is_new_conversation, style
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
@@ -740,6 +965,7 @@ class ClaudeClient:
         files: list[str | Path] | None = None,
         attachments: list[dict] | None = None,
         model: str | Model | None = None,
+        style: str | dict | None = None,
     ) -> ModelOutput:
         """
         Send a single-turn message to Claude and return the full response.
@@ -773,6 +999,7 @@ class ClaudeClient:
             parent_uuid         = "00000000-0000-4000-8000-000000000000",
             attachments         = attachments,
             is_new_conversation = True,
+            style               = style,
         )
 
     # ── public API: generate_content_stream ───────────────────────────────
@@ -783,6 +1010,7 @@ class ClaudeClient:
         files: list[str | Path] | None = None,
         attachments: list[dict] | None = None,
         model: str | Model | None = None,
+        style: str | dict | None = None,
     ) -> AsyncIterator[ModelOutput]:
         """
         Stream a single-turn response, yielding incremental chunks.
@@ -804,6 +1032,7 @@ class ClaudeClient:
             model               = model,
             parent_uuid         = "00000000-0000-4000-8000-000000000000",
             is_new_conversation = True,
+            style               = style,
         ):
             yield chunk
             
@@ -830,6 +1059,7 @@ class ClaudeClient:
         self,
         model: str | Model | None = None,
         metadata: dict | None = None,
+        style: str | dict | None = None,
     ) -> ChatSession:
         """
         Create a new :class:`~claude_webapi.session.ChatSession`.
@@ -857,6 +1087,7 @@ class ClaudeClient:
             client        = self,
             model         = resolved,
             metadata      = metadata,
+            style         = style,
         )
 
     # ── public API: delete_conversation ───────────────────────────────────

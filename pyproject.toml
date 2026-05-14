@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "claude-webapi"
+name = "claude_webapi"
 version = "1.0.0"
 description = "Async Python wrapper for the Claude.ai web app"
 readme = "README.md"
@@ -23,16 +23,14 @@ classifiers = [
 
 dependencies = [
     "aiohttp>=3.9",
-    "browser-cookie3>=0.19; extra == 'browser'",
 ]
 
 [project.optional-dependencies]
-browser = ["browser-cookie3>=0.19"]
-dev     = ["pytest>=7", "pytest-asyncio>=0.23", "black", "ruff"]
+dev = ["pytest>=7", "pytest-asyncio>=0.23", "black", "ruff"]
 
 [project.urls]
-Homepage   = "https://github.com/yourusername/claude_webapi"
-Issues     = "https://github.com/yourusername/claude_webapi/issues"
+Homepage   = "https://github.com/cyber-wojtek/Claude-API"
+Issues     = "https://github.com/cyber-wojtek/Claude-API/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

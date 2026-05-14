@@ -32,13 +32,14 @@ class ChatSession:
         conversation_id: str | None = None,
         model: str | None = None,
         metadata: dict | None = None,
+        style: "str | dict | None" = None,
     ):
         self._client          = client
         self._model           = model
+        self._style           = style
         self._parent_uuid     = "00000000-0000-4000-8000-000000000000"
         self._current_candidate_index: int = 0
 
-        # Restore or create conversation
         if metadata:
             self._conv_id       = metadata["conversation_id"]
             self._parent_uuid   = metadata.get("parent_message_uuid", self._parent_uuid)
@@ -74,6 +75,7 @@ class ChatSession:
         prompt: str,
         files: list[str | Path] | None = None,
         model: str | None = None,
+        style: "str | dict | None" = None,
     ) -> ModelOutput:
         """
         Send *prompt* and wait for the complete response.
@@ -100,8 +102,9 @@ class ChatSession:
             model               = model or self._model,
             parent_uuid         = self._parent_uuid,
             is_new_conversation = is_new,
+            style               = style if style is not None else self._style
         )
-        self._last_response = output
+
         if output.metadata.get("parent_message_uuid"):
             self._parent_uuid = output.metadata["parent_message_uuid"]
         return output
@@ -111,6 +114,7 @@ class ChatSession:
         prompt: str,
         files: list[str | Path] | None = None,
         model: str | None = None,
+        style: "str | dict | None" = None,
     ) -> AsyncIterator[ModelOutput]:
         """
         Stream *prompt* response, yielding incremental :class:`ModelOutput`
@@ -131,8 +135,8 @@ class ChatSession:
             model               = model or self._model,
             parent_uuid         = self._parent_uuid,
             is_new_conversation = is_new,
-        ):
-            # Update parent UUID from the last chunk's metadata
+            style               = style if style is not None else self._style
+            ):
             if chunk.metadata.get("parent_message_uuid"):
                 self._parent_uuid = chunk.metadata["parent_message_uuid"]
             yield chunk
