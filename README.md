@@ -383,5 +383,4 @@ except APIError as e:
 ## References
 
 - [Claude.ai](https://claude.ai)
-- [Anthropic official API](https://docs.anthropic.com)
 - [gemini_webapi](https://github.com/HanaokaYuzu/Gemini-API) — inspiration for the interface design
