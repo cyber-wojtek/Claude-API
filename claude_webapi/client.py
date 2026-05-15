@@ -639,9 +639,7 @@ class ClaudeClient:
             out.write_bytes(await resp.read())
             return out.resolve()
 
-    # ── internal: ensure conversation exists ──────────────────────────────
-
-    async def _ensure_conversation(self, conv_id: str) -> None:
+    async def ensure_conversation(self, conv_id: str) -> None:
         """Create the conversation server-side if it doesn't yet exist."""
         payload = {
             "include_conversation_preferences": True,
