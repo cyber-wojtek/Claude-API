@@ -19,6 +19,22 @@ An unofficial **async Python client** for the [Claude.ai](https://claude.ai) web
 
 ---
 
+## Example projects using this library
+
+### ChatAI Console
+
+A full-featured self-hosted web UI built on top of `claude-webapi`.
+
+**Features:**
+- Multi-account management — Claude and ChatWithAI accounts side by side
+- Real-time streaming with artifacts
+- File upload, download, and canvas preview panel
+- Google OAuth sign-in flow for Claude accounts
+- Quota tracking and usage history
+- Local conversation storage with pinning
+
+---
+
 ## Installation
 
 Requires Python **3.10+**.
