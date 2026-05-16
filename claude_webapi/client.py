@@ -430,6 +430,9 @@ class ClaudeClient:
 
     def _org_url(self, path: str) -> str:
         return f"{CLAUDE_BASE_URL}/api/organizations/{self._organization_id}/{path}"
+    
+    def org_url(self, path: str) -> str:
+        return f"{CLAUDE_BASE_URL}/api/organizations/{self._organization_id}/{path}"
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -437,6 +440,12 @@ class ClaudeClient:
                 "Client not initialised.  Call `await client.init()` first."
             )
         return self._session
+    
+    def ensure_session(self) -> None:
+        if self._session is None or self._session.closed:
+            raise RuntimeError(
+                "Client not initialised.  Call `await client.init()` first."
+            )
 
     # ── low-level request helpers ──────────────────────────────────────────
 

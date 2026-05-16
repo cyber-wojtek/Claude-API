@@ -19,11 +19,11 @@ An unofficial **async Python client** for the [Claude.ai](https://claude.ai) web
 
 ---
 
-## Example projects using this library
+## Related projects
 
 ### ChatAI Console
 
-A full-featured self-hosted web UI built on top of `claude-webapi`.
+A full-featured self-hosted web UI for Claude and ChatWithAI.app. Claude-API stems off of this.
 
 **Features:**
 - Multi-account management — Claude and ChatWithAI accounts side by side
