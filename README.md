@@ -21,7 +21,7 @@ An unofficial **async Python client** for the [Claude.ai](https://claude.ai) web
 
 ## Related projects
 
-### ChatAI Console
+### [ChatAI Console](https://github.com/cyber-wojtek/ChatAI-Console)
 
 A full-featured self-hosted web UI for Claude, ChatWithAI.app and 1MinAI. Claude-API stems off of this
 
