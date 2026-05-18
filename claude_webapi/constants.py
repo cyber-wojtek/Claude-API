@@ -25,13 +25,6 @@ class Model(Enum):
     OPUS         = "claude-opus-4-6"
     HAIKU        = "claude-haiku-4-5-20251001"
 
-    # ── Claude 3.x (legacy, still accepted) ──────────────────────────────
-    SONNET_3_7   = "claude-3-7-sonnet-20250219"
-    SONNET_3_5   = "claude-3-5-sonnet-20241022"
-    HAIKU_3_5    = "claude-3-5-haiku-20241022"
-    OPUS_3       = "claude-3-opus-20240229"
-
-    # ── Default (unspecified — Claude.ai picks) ───────────────────────────
     DEFAULT      = "claude-sonnet-4-6"
 
     @property
