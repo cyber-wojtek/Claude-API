@@ -281,10 +281,6 @@ Available models:
 | `Model.SONNET`      | `claude-sonnet-4-6`             |
 | `Model.OPUS`        | `claude-opus-4-6`               |
 | `Model.HAIKU`       | `claude-haiku-4-5-20251001`     |
-| `Model.SONNET_3_7`  | `claude-3-7-sonnet-20250219`    |
-| `Model.SONNET_3_5`  | `claude-3-5-sonnet-20241022`    |
-| `Model.HAIKU_3_5`   | `claude-3-5-haiku-20241022`     |
-| `Model.OPUS_3`      | `claude-3-opus-20240229`        |
 
 Any model string not in the enum can be passed as a plain string.
 
