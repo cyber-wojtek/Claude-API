@@ -427,6 +427,11 @@ class ClaudeClient:
             self._organization_id = orgs[0]['uuid']
             return self._organization_id
         raise APIError("Unable to discover organization UUID.")
+    
+    async def get_organizations(self) -> list[dict]:
+        """Fetch the list of organizations accessible with the current session."""
+        res = await self._get(f"{CLAUDE_BASE_URL}/api/organizations")
+        return res if isinstance(res, list) else []
 
     def _org_url(self, path: str) -> str:
         return f"{CLAUDE_BASE_URL}/api/organizations/{self._organization_id}/{path}"

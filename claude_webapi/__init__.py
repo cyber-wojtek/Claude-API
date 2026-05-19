@@ -78,5 +78,5 @@ __all__ = [
     "set_log_level",
 ]
 
-__version__ = "1.0.3"
+__version__ = "1.0.31"
 
