@@ -891,18 +891,21 @@ class ClaudeClient:
         is_new_conversation: bool = False,
         style: str | dict | None = None,
     ) -> AsyncIterator[ModelOutput]:
-        file_uuids = await self._upload_file_list(conv_id, files or [])
+        file_uuids     = await self._upload_file_list(conv_id, files or [])
         resolved_model = _resolve_model(model)
-        payload = self._build_payload(
-            prompt, file_uuids, resolved_model, parent_uuid, attachments, is_new_conversation, style
+        payload        = self._build_payload(
+            prompt, file_uuids, resolved_model, parent_uuid,
+            attachments, is_new_conversation, style,
         )
 
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
         session = self._ensure_session()
 
-        accumulated      = ""
+        accumulated       = ""
         accumulated_think = ""
-        new_parent       = parent_uuid
+        new_parent        = parent_uuid
+        # track open blocks: index → {"type": str, "id": str, "name": str}
+        open_blocks: dict[int, dict] = {}
 
         async with session.post(
             url,
@@ -919,66 +922,176 @@ class ClaudeClient:
             async for raw_chunk in resp.content:
                 buf += raw_chunk.decode("utf-8", errors="replace")
                 chunks = re.split(r"\r?\n\r?\n", buf)
-                buf = chunks.pop()
+                buf    = chunks.pop()
+
                 for event_str in chunks:
                     if not event_str.strip():
                         continue
+
                     data = None
                     for line in re.split(r"\r?\n", event_str):
                         t = line.strip()
                         if t.startswith("data:"):
                             data = t[5:].strip()
-                            break  # take first data line only
+                            break
                     if not data:
                         continue
+
                     try:
                         evt = json.loads(data)
                     except json.JSONDecodeError:
                         continue
+
                     etype = evt.get("type", "")
 
-                    if etype == "content_block_delta":
+                    # ── content_block_start ───────────────────────────────────
+                    if etype == "content_block_start":
+                        idx   = evt.get("index", 0)
+                        block = evt.get("content_block", {})
+                        btype = block.get("type", "")
+                        open_blocks[idx] = {
+                            "type": btype,
+                            "id":   block.get("id", ""),
+                            "name": block.get("name", ""),
+                        }
+                        yield ModelOutput(
+                            text       = accumulated,
+                            event_type = etype,
+                            raw_event  = evt,
+                            tool_index = idx,
+                            tool_id    = block.get("id", ""),
+                            tool_name  = block.get("name", ""),
+                            metadata   = {"parent_message_uuid": new_parent},
+                        )
+
+                    # ── content_block_delta ───────────────────────────────────
+                    elif etype == "content_block_delta":
+                        idx   = evt.get("index", 0)
                         delta = evt.get("delta", {})
                         dtype = delta.get("type", "")
+
                         if dtype == "text_delta":
                             delta_text   = delta.get("text", "")
                             accumulated += delta_text
                             yield ModelOutput(
-                                text             = accumulated,
-                                text_delta       = delta_text,
-                                thinking_delta   = "",
-                                metadata         = {"parent_message_uuid": new_parent},
+                                text         = accumulated,
+                                text_delta   = delta_text,
+                                event_type   = etype,
+                                raw_event    = evt,
+                                tool_index   = idx,
+                                metadata     = {"parent_message_uuid": new_parent},
                             )
+
                         elif dtype == "thinking_delta":
                             delta_think        = delta.get("thinking", "")
                             accumulated_think += delta_think
                             yield ModelOutput(
-                                text             = accumulated,
-                                text_delta       = "",
-                                thinking_delta   = delta_think,
-                                metadata         = {"parent_message_uuid": new_parent},
+                                text            = accumulated,
+                                thinking_delta  = delta_think,
+                                event_type      = etype,
+                                raw_event       = evt,
+                                tool_index      = idx,
+                                metadata        = {"parent_message_uuid": new_parent},
                             )
 
+                        elif dtype == "input_json_delta":
+                            yield ModelOutput(
+                                text              = accumulated,
+                                tool_input_delta  = delta.get("partial_json", ""),
+                                event_type        = etype,
+                                raw_event         = evt,
+                                tool_index        = idx,
+                                tool_id           = open_blocks.get(idx, {}).get("id", ""),
+                                tool_name         = open_blocks.get(idx, {}).get("name", ""),
+                                metadata          = {"parent_message_uuid": new_parent},
+                            )
+
+                        else:
+                            # Unknown delta type — pass through raw
+                            yield ModelOutput(
+                                text       = accumulated,
+                                event_type = etype,
+                                raw_event  = evt,
+                                tool_index = idx,
+                                metadata   = {"parent_message_uuid": new_parent},
+                            )
+
+                    # ── content_block_stop ────────────────────────────────────
+                    elif etype == "content_block_stop":
+                        idx = evt.get("index", 0)
+                        open_blocks.pop(idx, None)
+                        yield ModelOutput(
+                            text       = accumulated,
+                            event_type = etype,
+                            raw_event  = evt,
+                            tool_index = idx,
+                            metadata   = {"parent_message_uuid": new_parent},
+                        )
+
+                    # ── message_start ─────────────────────────────────────────
                     elif etype == "message_start":
                         mid = evt.get("message", {}).get("uuid", "")
                         if mid:
                             new_parent = mid
+                        yield ModelOutput(
+                            text       = accumulated,
+                            event_type = etype,
+                            raw_event  = evt,
+                            metadata   = {"parent_message_uuid": new_parent},
+                        )
 
+                    # ── message_delta ─────────────────────────────────────────
+                    elif etype == "message_delta":
+                        yield ModelOutput(
+                            text       = accumulated,
+                            event_type = etype,
+                            raw_event  = evt,
+                            metadata   = {"parent_message_uuid": new_parent},
+                        )
+
+                    # ── message_stop ──────────────────────────────────────────
+                    elif etype == "message_stop":
+                        yield ModelOutput(
+                            text       = accumulated,
+                            event_type = etype,
+                            raw_event  = evt,
+                            metadata   = {"parent_message_uuid": new_parent},
+                        )
+
+                    # ── message_limit ─────────────────────────────────────────
                     elif etype == "message_limit":
                         quota = self._parse_message_limit_event(evt)
                         if quota:
                             pct     = round(quota["remaining_fraction"] * 100)
-                            reset_s = round(quota["reset_ms"] / 1000) if quota["reset_ms"] is not None else None
+                            reset_s = (
+                                round(quota["reset_ms"] / 1000)
+                                if quota["reset_ms"] is not None else None
+                            )
                             if quota["is_hard_limit"]:
                                 eta = f" (resets in {reset_s}s)" if reset_s is not None else ""
                                 raise QuotaExceededError(
                                     f"Claude.ai message limit reached; {pct}% remaining{eta}.",
-                                    reset_at_ms=quota["reset_at_ms"],
-                                    retry_after_s=reset_s,
+                                    reset_at_ms   = quota["reset_at_ms"],
+                                    retry_after_s = reset_s,
                                 )
                             else:
                                 logger.debug("Quota update: %d%% remaining.", pct)
-   
+                                yield ModelOutput(
+                                    text       = accumulated,
+                                    event_type = etype,
+                                    raw_event  = evt,
+                                    metadata   = {"parent_message_uuid": new_parent},
+                                )
+
+                    # ── everything else — pass through ────────────────────────
+                    else:
+                        yield ModelOutput(
+                            text       = accumulated,
+                            event_type = etype,
+                            raw_event  = evt,
+                            metadata   = {"parent_message_uuid": new_parent},
+                        )
+                        
     # ── public API: generate_content ──────────────────────────────────────
 
     async def generate_content(
