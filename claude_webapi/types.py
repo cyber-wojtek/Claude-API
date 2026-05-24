@@ -129,7 +129,8 @@ class ModelOutput:
     tool_result:     dict | None     = None   # complete tool_result block if present
     event_type:      str             = ""     # raw SSE event type for passthrough
     raw_event:       dict | None     = None   # full raw SSE event for passthrough
-
+    tool_use_id:     str             = ""     # unique ID for this tool use, for correlating across events
+    
     # ── convenience ───────────────────────────────────────────────────────
 
     def __str__(self) -> str:

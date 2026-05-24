@@ -1019,14 +1019,42 @@ class ClaudeClient:
                     # ── content_block_stop ────────────────────────────────────
                     elif etype == "content_block_stop":
                         idx = evt.get("index", 0)
-                        open_blocks.pop(idx, None)
-                        yield ModelOutput(
-                            text       = accumulated,
-                            event_type = etype,
-                            raw_event  = evt,
-                            tool_index = idx,
-                            metadata   = {"parent_message_uuid": new_parent},
-                        )
+                        block_info = open_blocks.pop(idx, {})
+                        
+                        # For tool_result blocks, parse accumulated JSON and yield enriched event
+                        if block_info.get("type") == "tool_result":
+                            input_str = block_info.get("input_str", "")
+                            parsed_result = None
+                            if input_str:
+                                try:
+                                    parsed_result = json.loads(input_str)
+                                except json.JSONDecodeError:
+                                    pass
+                            
+                            # Attach parsed result to the raw event for passthrough
+                            enriched_evt = dict(evt)
+                            enriched_evt["_tool_result_parsed"] = parsed_result
+                            enriched_evt["_tool_use_id"] = block_info.get("tool_use_id", "")
+                            enriched_evt["_tool_name"] = block_info.get("name", "")
+                            
+                            yield ModelOutput(
+                                text       = accumulated,
+                                event_type = etype,
+                                raw_event  = enriched_evt,
+                                tool_index = idx,
+                                tool_id    = block_info.get("tool_use_id", ""),
+                                tool_name  = block_info.get("name", ""),
+                                metadata   = {"parent_message_uuid": new_parent},
+                            )
+                        else:
+                            yield ModelOutput(
+                                text       = accumulated,
+                                event_type = etype,
+                                raw_event  = evt,
+                                tool_index = idx,
+                                metadata   = {"parent_message_uuid": new_parent},
+                            )
+                        continue  # don't fall through to generic yield
 
                     # ── message_start ─────────────────────────────────────────
                     elif etype == "message_start":
