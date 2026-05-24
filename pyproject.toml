@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude_webapi"
-version = "1.0.31"
+version = "1.0.32"
 description = "Async Python wrapper for the Claude.ai web app"
 readme = "README.md"
 requires-python = ">=3.10"
