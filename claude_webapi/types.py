@@ -119,6 +119,7 @@ class ModelOutput:
     thoughts: str = ""
     metadata: dict = field(default_factory=dict)
     text_delta: str = ""
+    thinking_delta:  str = ""
 
     # ── convenience ───────────────────────────────────────────────────────
 

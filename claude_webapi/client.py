@@ -380,11 +380,15 @@ class ClaudeClient:
             "x-activity-session-id":  self._activity_session_id,
         }
 
+        MAX_LINE_LIMIT = 5242880 # 5 MB in bytes, adjust as needed
+
         connector = aiohttp.TCPConnector(ssl=True)
         self._session = aiohttp.ClientSession(
             cookies=cookies,
             connector=connector,
             headers=headers,
+            max_line_size=MAX_LINE_LIMIT,
+            max_field_size=MAX_LINE_LIMIT,
         )
 
         if not self._organization_id:
@@ -801,7 +805,7 @@ class ClaudeClient:
         ) as resp:
             await self._raise_for_status(resp)
             buf = ""
-            async for raw_chunk in resp.content:
+            async for raw_chunk in resp.content.iter_chunked(256):
                 buf += raw_chunk.decode("utf-8", errors="replace")
                 chunks = re.split(r"\r?\n\r?\n", buf)
                 buf = chunks.pop()
@@ -896,9 +900,9 @@ class ClaudeClient:
         url     = self._org_url(f"chat_conversations/{conv_id}/completion")
         session = self._ensure_session()
 
-        accumulated = ""
-        new_parent  = parent_uuid
-        meta: dict  = {}
+        accumulated      = ""
+        accumulated_think = ""
+        new_parent       = parent_uuid
 
         async with session.post(
             url,
@@ -908,7 +912,7 @@ class ClaudeClient:
                 "x-activity-session-id": self._activity_session_id,
                 "Accept":                "text/event-stream",
             },
-            timeout=aiohttp.ClientTimeout(total=300),
+            timeout=aiohttp.ClientTimeout(total=3600),
         ) as resp:
             await self._raise_for_status(resp)
             buf = ""
@@ -919,14 +923,12 @@ class ClaudeClient:
                 for event_str in chunks:
                     if not event_str.strip():
                         continue
-                    event_type = None
                     data = None
                     for line in re.split(r"\r?\n", event_str):
                         t = line.strip()
-                        if t.startswith("event:"):
-                            event_type = t[6:].strip()
-                        elif t.startswith("data:"):
+                        if t.startswith("data:"):
                             data = t[5:].strip()
+                            break  # take first data line only
                     if not data:
                         continue
                     try:
@@ -937,13 +939,24 @@ class ClaudeClient:
 
                     if etype == "content_block_delta":
                         delta = evt.get("delta", {})
-                        if delta.get("type") == "text_delta":
-                            delta_text  = delta.get("text", "")
+                        dtype = delta.get("type", "")
+                        if dtype == "text_delta":
+                            delta_text   = delta.get("text", "")
                             accumulated += delta_text
                             yield ModelOutput(
-                                text       = accumulated,
-                                text_delta = delta_text,
-                                metadata   = {"parent_message_uuid": new_parent},
+                                text             = accumulated,
+                                text_delta       = delta_text,
+                                thinking_delta   = "",
+                                metadata         = {"parent_message_uuid": new_parent},
+                            )
+                        elif dtype == "thinking_delta":
+                            delta_think        = delta.get("thinking", "")
+                            accumulated_think += delta_think
+                            yield ModelOutput(
+                                text             = accumulated,
+                                text_delta       = "",
+                                thinking_delta   = delta_think,
+                                metadata         = {"parent_message_uuid": new_parent},
                             )
 
                     elif etype == "message_start":
@@ -951,13 +964,10 @@ class ClaudeClient:
                         if mid:
                             new_parent = mid
 
-                    elif etype == "message_stop":
-                        meta = evt.get("message", {})
-
                     elif etype == "message_limit":
                         quota = self._parse_message_limit_event(evt)
                         if quota:
-                            pct = round(quota["remaining_fraction"] * 100)
+                            pct     = round(quota["remaining_fraction"] * 100)
                             reset_s = round(quota["reset_ms"] / 1000) if quota["reset_ms"] is not None else None
                             if quota["is_hard_limit"]:
                                 eta = f" (resets in {reset_s}s)" if reset_s is not None else ""
@@ -968,7 +978,7 @@ class ClaudeClient:
                                 )
                             else:
                                 logger.debug("Quota update: %d%% remaining.", pct)
-
+   
     # ── public API: generate_content ──────────────────────────────────────
 
     async def generate_content(
