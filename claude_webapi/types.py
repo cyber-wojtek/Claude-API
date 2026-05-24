@@ -120,6 +120,15 @@ class ModelOutput:
     metadata: dict = field(default_factory=dict)
     text_delta: str = ""
     thinking_delta:  str = ""
+    
+    # ── tool use ──────────────────────────────────────────────────────────
+    tool_index:      int | None      = None   # which block index this belongs to
+    tool_id:         str             = ""     # tool use id from message
+    tool_name:       str             = ""     # e.g. "artifacts", "web_search"
+    tool_input_delta: str            = ""     # partial JSON input delta
+    tool_result:     dict | None     = None   # complete tool_result block if present
+    event_type:      str             = ""     # raw SSE event type for passthrough
+    raw_event:       dict | None     = None   # full raw SSE event for passthrough
 
     # ── convenience ───────────────────────────────────────────────────────
 
@@ -141,6 +150,75 @@ class ModelOutput:
     def generated_images(self) -> list[Image]:
         """AI-generated images only."""
         return [img for img in self.images if img.generated]
+    
+    @property
+    def all_images(self) -> list[Image]:
+        """All images, regardless of source."""
+        return self.images
+    
+    # ── candidate helpers ─────────────────────────────────────────────────
+    @property
+    def primary_candidate(self) -> Candidate | None:
+        """The primary (first) candidate, or None if no candidates."""
+        return self.candidates[0] if self.candidates else None
+    
+    @property
+    def primary_text(self) -> str:
+        """The text of the primary candidate, or empty string if no candidates."""
+        return self.primary_candidate.text if self.primary_candidate else ""
+    
+    @property
+    def primary_images(self) -> list[Image]:
+        """The images of the primary candidate, or empty list if no candidates."""
+        return self.primary_candidate.images if self.primary_candidate else []
+    
+    # ── internal ──────────────────────────────────────────────────────────
+    @classmethod
+    def from_raw_event(cls, event: dict) -> ModelOutput:
+        """Parse a raw SSE event dict into a ModelOutput."""
+        text = event.get("text", "")
+        images = _extract_images(text)
+        candidates = []
+        for i, cand_text in enumerate(event.get("candidates", [])):
+            cand_images = _extract_images(cand_text)
+            candidates.append(Candidate(index=i, text=cand_text, images=cand_images))
+        thoughts = event.get("thoughts", "")
+        metadata = event.get("metadata", {})
+        return cls(
+            text=text,
+            candidates=candidates,
+            images=images,
+            thoughts=thoughts,
+            metadata=metadata,
+            text_delta=event.get("text_delta", ""),
+            thinking_delta=event.get("thinking_delta", ""),
+            tool_index=event.get("tool_index"),
+            tool_id=event.get("tool_id", ""),
+            tool_name=event.get("tool_name", ""),
+            tool_input_delta=event.get("tool_input_delta", ""),
+            tool_result=event.get("tool_result"),
+            event_type=event.get("event_type", ""),
+            raw_event=event
+        )
+    
+    @classmethod
+    def from_final_response(cls, response: dict) -> ModelOutput:
+        """Parse the final JSON response from a non-streaming send_message into a ModelOutput."""
+        text = response.get("text", "")
+        images = _extract_images(text)
+        candidates = []
+        for i, cand_text in enumerate(response.get("candidates", [])):
+            cand_images = _extract_images(cand_text)
+            candidates.append(Candidate(index=i, text=cand_text, images=cand_images))
+        thoughts = response.get("thoughts", "")
+        metadata = response.get("metadata", {})
+        return cls(
+            text=text,
+            candidates=candidates,
+            images=images,
+            thoughts=thoughts,
+            metadata=metadata
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
