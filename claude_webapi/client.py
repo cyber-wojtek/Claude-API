@@ -614,7 +614,7 @@ class ClaudeClient:
         session = self._ensure_session()
         form = aiohttp.FormData()
         form.add_field("file", data, filename=filename, content_type=mime_type)
-        async with session.post(url, data=form, timeout=aiohttp.ClientTimeout(total=90)) as resp:
+        async with session.post(url, data=form, timeout=aiohttp.ClientTimeout(total=300)) as resp:
             if resp.status != 200:
                 body = await resp.text()
                 raise FileUploadError(f"Upload failed ({resp.status}): {body[:300]}")
@@ -645,7 +645,7 @@ class ClaudeClient:
             f"?path={quote(file_path, safe='')}"
         )
         session = self._ensure_session()
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=90)) as resp:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=300)) as resp:
             await self._raise_for_status(resp)
             filename = file_path.split("/")[-1] or "download"
             out = Path(dest) / filename
@@ -667,7 +667,7 @@ class ClaudeClient:
             self._org_url("chat_conversations"),
             data=body,
             headers={"anthropic-device-id": self._device_id, "x-activity-session-id": self._activity_session_id, "Content-Length": str(len(body)), "content-type": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=30),
+            timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:
             if resp.status in (200, 201):
                 return
@@ -871,7 +871,7 @@ class ClaudeClient:
             f"/chat_conversations/{conversation_id}/stop_response"
         )
         session = self._ensure_session()
-        async with session.post(url, data=b"", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+        async with session.post(url, data=b"", timeout=aiohttp.ClientTimeout(total=60)) as resp:
             return resp.status == 200
 
     # ── internal: send (streaming) ─────────────────────────────────────────
