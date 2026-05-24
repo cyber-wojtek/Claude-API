@@ -927,7 +927,7 @@ class ClaudeClient:
                             event_type = t[6:].strip()
                         elif t.startswith("data:"):
                             data = t[5:].strip()
-                    if not (event_type and data):
+                    if not data:
                         continue
                     try:
                         evt = json.loads(data)
