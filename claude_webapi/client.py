@@ -919,7 +919,7 @@ class ClaudeClient:
         ) as resp:
             await self._raise_for_status(resp)
             buf = ""
-            async for raw_chunk in resp.content:
+            async for raw_chunk in resp.content.iter_chunked(256):
                 buf += raw_chunk.decode("utf-8", errors="replace")
                 chunks = re.split(r"\r?\n\r?\n", buf)
                 buf    = chunks.pop()
